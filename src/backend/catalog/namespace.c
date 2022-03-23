@@ -67,6 +67,7 @@
 #include "tcop/utility.h"
 
 #include "cdb/cdbdisp_query.h"
+#include "cdb/cdbgang.h"
 #include "cdb/cdbtm.h"
 
 /*
@@ -3880,6 +3881,12 @@ InitTempTableNamespace(void)
 									DF_NEED_TWO_PHASE,
 									GetAssignedOidsForDispatch(),
 									NULL);
+
+		/*
+		 * plug out all idle QEs to insure the consistency because CdbDispatch()
+		 * only update myTempNamespace for primary gang.
+		 */
+		DisconnectAndDestroyUnusedQEs();
 	}
 }
 
