@@ -95,26 +95,27 @@ EXECUTE pgss_test(1);
 (1 row)
 
 DEALLOCATE pgss_test;
-SELECT query, calls, rows FROM pg_stat_statements ORDER BY query COLLATE "C";
-                       query                       | calls | rows 
----------------------------------------------------+-------+------
- PREPARE pgss_test (int) AS SELECT $1, $2 LIMIT $3 |     1 |    1
- SELECT $1                                        +|     4 |    4
-                                                  +|       | 
-   AS "text"                                       |       | 
- SELECT $1 + $2                                    |     2 |    2
- SELECT $1 + $2 + $3 AS "add"                      |     3 |    3
- SELECT $1 AS "float"                              |     1 |    1
- SELECT $1 AS "int"                                |     2 |    2
- SELECT $1 AS i UNION SELECT $2 ORDER BY i         |     1 |    2
- SELECT $1 || $2                                   |     1 |    1
- SELECT pg_stat_statements_reset()                 |     1 |    1
- WITH t(f) AS (                                   +|     1 |    2
-   VALUES ($1), ($2)                              +|       | 
- )                                                +|       | 
-   SELECT f FROM t ORDER BY f                      |       | 
- select $1::jsonb ? $2                             |     1 |    1
-(11 rows)
+SELECT count(*), query, sum(calls) calls, sum(rows) rows FROM pg_stat_statements GROUP BY query ORDER BY query COLLATE "C";
+ count |                              query                              | calls | rows 
+-------+-----------------------------------------------------------------+-------+------
+     1 | PREPARE pgss_test (int) AS SELECT $1, $2 LIMIT $3               |     1 |    1
+     1 | SELECT $1                                                      +|     4 |    4
+       |                                                                +|       | 
+       |   AS "text"                                                     |       | 
+     1 | SELECT $1 + $2                                                  |     2 |    2
+     1 | SELECT $1 + $2 + $3 AS "add"                                    |     3 |    3
+     1 | SELECT $1 AS "float"                                            |     1 |    1
+     1 | SELECT $1 AS "int"                                              |     2 |    2
+     1 | SELECT $1 AS i UNION SELECT $2 ORDER BY i                       |     1 |    2
+     1 | SELECT $1 || $2                                                 |     1 |    1
+     1 | SELECT pg_stat_statements_reset()                               |     1 |    1
+     3 | SELECT pg_stat_statements_reset_segments(userid, dbid, queryid) |     3 |    0
+     1 | WITH t(f) AS (                                                 +|     1 |    2
+       |   VALUES ($1), ($2)                                            +|       | 
+       | )                                                              +|       | 
+       |   SELECT f FROM t ORDER BY f                                    |       | 
+     1 | select $1::jsonb ? $2                                           |     1 |    1
+(12 rows)
 
 --
 -- CRUD: INSERT SELECT UPDATE DELETE on test table
@@ -146,7 +147,7 @@ COMMIT ;
 -- many INSERT values
 INSERT INTO test (a, b) VALUES (1, 'a'), (2, 'b'), (3, 'c');
 -- SELECT with constants
-SELECT * FROM test WHERE a > 5 ORDER BY a ;
+SELECT * FROM test WHERE a > 5 ORDER BY a, b;
  a |          b           
 ---+----------------------
  6 | 666                 
@@ -167,12 +168,12 @@ SELECT *
 SELECT * FROM test ORDER BY a;
  a |          b           
 ---+----------------------
- 1 | a                   
  1 | 111                 
- 2 | b                   
+ 1 | a                   
  2 | 222                 
- 3 | c                   
+ 2 | b                   
  3 | 333                 
+ 3 | c                   
  4 | 444                 
  5 | 555                 
  6 | 666                 
@@ -182,32 +183,37 @@ SELECT * FROM test ORDER BY a;
 (12 rows)
 
 -- SELECT with IN clause
-SELECT * FROM test WHERE a IN (1, 2, 3, 4, 5);
+SELECT * FROM test WHERE a IN (1, 2, 3, 4, 5) ORDER BY a, b;
  a |          b           
 ---+----------------------
  1 | 111                 
+ 1 | a                   
  2 | 222                 
+ 2 | b                   
  3 | 333                 
+ 3 | c                   
  4 | 444                 
  5 | 555                 
- 1 | a                   
- 2 | b                   
- 3 | c                   
 (8 rows)
 
-SELECT query, calls, rows FROM pg_stat_statements ORDER BY query COLLATE "C";
-                            query                            | calls | rows 
--------------------------------------------------------------+-------+------
- DELETE FROM test WHERE a > $1                               |     1 |    1
- INSERT INTO test (a, b) VALUES ($1, $2), ($3, $4), ($5, $6) |     1 |    3
- INSERT INTO test VALUES(generate_series($1, $2), $3)        |     1 |   10
- SELECT * FROM test ORDER BY a                               |     1 |   12
- SELECT * FROM test WHERE a > $1 ORDER BY a                  |     2 |    4
- SELECT * FROM test WHERE a IN ($1, $2, $3, $4, $5)          |     1 |    8
- SELECT pg_stat_statements_reset()                           |     1 |    1
- UPDATE test SET b = $1 WHERE a = $2                         |     6 |    6
- UPDATE test SET b = $1 WHERE a > $2                         |     1 |    3
-(9 rows)
+SELECT count(*), query, sum(calls) calls, sum(rows) rows FROM pg_stat_statements GROUP BY query ORDER BY query COLLATE "C";
+ count |                              query                               | calls | rows 
+-------+------------------------------------------------------------------+-------+------
+     4 | DELETE FROM test WHERE a > $1                                    |     4 |    1
+     4 | INSERT INTO test (a, b) VALUES ($1, $2), ($3, $4), ($5, $6)      |     5 |    3
+     4 | INSERT INTO test VALUES(generate_series($1, $2), $3)             |     5 |   10
+     4 | SELECT *                                                        +|     4 |    0
+       |   FROM test                                                     +|       | 
+       |   WHERE a > $1                                                  +|       | 
+       |   ORDER BY a                                                     |       | 
+     4 | SELECT * FROM test ORDER BY a                                    |     4 |   12
+     4 | SELECT * FROM test WHERE a > $1 ORDER BY a, b                    |     4 |    4
+     4 | SELECT * FROM test WHERE a IN ($1, $2, $3, $4, $5) ORDER BY a, b |     4 |    8
+     1 | SELECT pg_stat_statements_reset()                                |     1 |    1
+     3 | SELECT pg_stat_statements_reset_segments(userid, dbid, queryid)  |     3 |    0
+     4 | UPDATE test SET b = $1 WHERE a = $2                              |    12 |    6
+     4 | UPDATE test SET b = $1 WHERE a > $2                              |     4 |    3
+(11 rows)
 
 --
 -- pg_stat_statements.track = none
@@ -231,9 +237,9 @@ SELECT 1 + 1 AS "two";
    2
 (1 row)
 
-SELECT query, calls, rows FROM pg_stat_statements ORDER BY query COLLATE "C";
- query | calls | rows 
--------+-------+------
+SELECT count(*), query, sum(calls) calls, sum(rows) rows FROM pg_stat_statements GROUP BY query ORDER BY query COLLATE "C";
+ count | query | calls | rows 
+-------+-------+-------+------
 (0 rows)
 
 --
@@ -287,14 +293,15 @@ SELECT PLUS_ONE(10);
        11
 (1 row)
 
-SELECT query, calls, rows FROM pg_stat_statements ORDER BY query COLLATE "C";
-               query               | calls | rows 
------------------------------------+-------+------
- SELECT $1::TEXT                   |     1 |    1
- SELECT PLUS_ONE($1)               |     2 |    2
- SELECT PLUS_TWO($1)               |     2 |    2
- SELECT pg_stat_statements_reset() |     1 |    1
-(4 rows)
+SELECT count(*), query, sum(calls) calls, sum(rows) rows FROM pg_stat_statements GROUP BY query ORDER BY query COLLATE "C";
+ count |                              query                              | calls | rows 
+-------+-----------------------------------------------------------------+-------+------
+     1 | SELECT $1::TEXT                                                 |     1 |    1
+     1 | SELECT PLUS_ONE($1)                                             |     2 |    2
+     1 | SELECT PLUS_TWO($1)                                             |     2 |    2
+     1 | SELECT pg_stat_statements_reset()                               |     1 |    1
+     3 | SELECT pg_stat_statements_reset_segments(userid, dbid, queryid) |     3 |    0
+(5 rows)
 
 --
 -- pg_stat_statements.track = all
@@ -344,15 +351,17 @@ SELECT PLUS_ONE(1);
         2
 (1 row)
 
-SELECT query, calls, rows FROM pg_stat_statements ORDER BY query COLLATE "C";
-               query               | calls | rows 
------------------------------------+-------+------
- SELECT (i + $2 + $3)::INTEGER     |     2 |    2
- SELECT (i + $2)::INTEGER LIMIT $3 |     2 |    2
- SELECT PLUS_ONE($1)               |     2 |    2
- SELECT PLUS_TWO($1)               |     2 |    2
- SELECT pg_stat_statements_reset() |     1 |    1
-(5 rows)
+SELECT count(*), query, sum(calls) calls, sum(rows) rows FROM pg_stat_statements GROUP BY query ORDER BY query COLLATE "C";
+ count |                              query                              | calls | rows 
+-------+-----------------------------------------------------------------+-------+------
+     1 | SELECT (i + $2 + $3)::INTEGER                                   |     2 |    2
+     1 | SELECT (i + $2)::INTEGER LIMIT $3                               |     2 |    2
+     1 | SELECT PLUS_ONE($1)                                             |     2 |    2
+     1 | SELECT PLUS_TWO($1)                                             |     2 |    2
+     1 | SELECT pg_stat_statements_reset()                               |     1 |    1
+     1 | SELECT pg_stat_statements_reset_local(userid, dbid, queryid)    |     1 |    1
+     3 | SELECT pg_stat_statements_reset_segments(userid, dbid, queryid) |     3 |    0
+(7 rows)
 
 --
 -- utility commands
@@ -382,18 +391,30 @@ NOTICE:  table "test" does not exist, skipping
 NOTICE:  table "test" does not exist, skipping
 NOTICE:  function plus_one(pg_catalog.int4) does not exist, skipping
 DROP FUNCTION PLUS_TWO(INTEGER);
-SELECT query, calls, rows FROM pg_stat_statements ORDER BY query COLLATE "C";
-                   query                   | calls | rows 
--------------------------------------------+-------+------
- CREATE INDEX test_b ON test(b)            |     1 |    0
- DROP FUNCTION IF EXISTS PLUS_ONE(INTEGER) |     1 |    0
- DROP FUNCTION PLUS_ONE(INTEGER)           |     1 |    0
- DROP FUNCTION PLUS_TWO(INTEGER)           |     1 |    0
- DROP TABLE IF EXISTS test                 |     3 |    0
- DROP TABLE test                           |     1 |    0
- SELECT $1                                 |     1 |    1
- SELECT pg_stat_statements_reset()         |     1 |    1
-(8 rows)
+SELECT count(*), query, sum(calls) calls, sum(rows) rows FROM pg_stat_statements GROUP BY query ORDER BY query COLLATE "C";
+ count |                               query                                | calls | rows 
+-------+--------------------------------------------------------------------+-------+------
+     1 | CREATE INDEX test_b ON test(b)                                     |     1 |    0
+     3 | CREATE INDEX test_b ON test(b);                                    |     3 |    0
+     1 | DROP FUNCTION IF EXISTS PLUS_ONE(INTEGER)                          |     1 |    0
+     1 | DROP FUNCTION PLUS_ONE(INTEGER)                                    |     1 |    0
+     1 | DROP FUNCTION PLUS_TWO(INTEGER)                                    |     1 |    0
+     3 | DROP FUNCTION PLUS_TWO(INTEGER);                                   |     3 |    0
+     1 | DROP TABLE IF EXISTS test                                          |     3 |    0
+     3 | DROP TABLE IF EXISTS test ;                                       +|     9 |    0
+       | DROP TABLE IF EXISTS test ;                                       +|       | 
+       | DROP FUNCTION IF EXISTS PLUS_ONE(INTEGER);                         |       | 
+     1 | DROP TABLE test                                                    |     1 |    0
+     3 | DROP TABLE test ;                                                 +|     9 |    0
+       | DROP TABLE IF EXISTS test ;                                       +|       | 
+       | DROP FUNCTION PLUS_ONE(INTEGER);                                   |       | 
+     1 | SELECT $1                                                          |     1 |    1
+     1 | SELECT pg_stat_statements_reset()                                  |     1 |    1
+     1 | SELECT pg_stat_statements_reset_local(userid, dbid, queryid)       |     1 |    1
+     3 | SELECT pg_stat_statements_reset_segments(userid, dbid, queryid)    |     3 |    0
+     3 | select indcheckxmin from pg_catalog.pg_index where indexrelid = $1 |     3 |    3
+     3 | select pg_catalog.pg_highest_oid()                                 |     3 |    3
+(16 rows)
 
 --
 -- Track user activity and reset them
@@ -434,20 +455,25 @@ SELECT 1+1 AS "TWO";
 (1 row)
 
 RESET ROLE;
-SELECT query, calls, rows FROM pg_stat_statements ORDER BY query COLLATE "C";
-               query               | calls | rows 
------------------------------------+-------+------
- CREATE ROLE regress_stats_user1   |     1 |    0
- CREATE ROLE regress_stats_user2   |     1 |    0
- RESET ROLE                        |     2 |    0
- SELECT $1 AS "ONE"                |     1 |    1
- SELECT $1 AS "ONE"                |     1 |    1
- SELECT $1+$2 AS "TWO"             |     1 |    1
- SELECT $1+$2 AS "TWO"             |     1 |    1
- SELECT pg_stat_statements_reset() |     1 |    1
- SET ROLE regress_stats_user1      |     1 |    0
- SET ROLE regress_stats_user2      |     1 |    0
-(10 rows)
+SELECT count(*), query, sum(calls) calls, sum(rows) rows FROM pg_stat_statements GROUP BY query ORDER BY query COLLATE "C";
+ count |                              query                              | calls | rows 
+-------+-----------------------------------------------------------------+-------+------
+     1 | CREATE ROLE regress_stats_user1                                 |     1 |    0
+     3 | CREATE ROLE regress_stats_user1;                                |     3 |    0
+     1 | CREATE ROLE regress_stats_user2                                 |     1 |    0
+     3 | CREATE ROLE regress_stats_user2;                                |     3 |    0
+     1 | RESET ROLE                                                      |     2 |    0
+     3 | RESET role                                                      |     6 |    0
+     2 | SELECT $1 AS "ONE"                                              |     2 |    2
+     2 | SELECT $1+$2 AS "TWO"                                           |     2 |    2
+     1 | SELECT pg_stat_statements_reset()                               |     1 |    1
+     1 | SELECT pg_stat_statements_reset_local(userid, dbid, queryid)    |     1 |    1
+     3 | SELECT pg_stat_statements_reset_segments(userid, dbid, queryid) |     3 |    0
+     1 | SET ROLE regress_stats_user1                                    |     1 |    0
+     1 | SET ROLE regress_stats_user2                                    |     1 |    0
+     3 | SET role TO 'regress_stats_user1'                               |     3 |    0
+     3 | SET role TO 'regress_stats_user2'                               |     3 |    0
+(15 rows)
 
 --
 -- Don't reset anything if any of the parameter is NULL
@@ -458,22 +484,57 @@ SELECT pg_stat_statements_reset(NULL);
  
 (1 row)
 
-SELECT query, calls, rows FROM pg_stat_statements ORDER BY query COLLATE "C";
-                                    query                                     | calls | rows 
-------------------------------------------------------------------------------+-------+------
- CREATE ROLE regress_stats_user1                                              |     1 |    0
- CREATE ROLE regress_stats_user2                                              |     1 |    0
- RESET ROLE                                                                   |     2 |    0
- SELECT $1 AS "ONE"                                                           |     1 |    1
- SELECT $1 AS "ONE"                                                           |     1 |    1
- SELECT $1+$2 AS "TWO"                                                        |     1 |    1
- SELECT $1+$2 AS "TWO"                                                        |     1 |    1
- SELECT pg_stat_statements_reset($1)                                          |     1 |    1
- SELECT pg_stat_statements_reset()                                            |     1 |    1
- SELECT query, calls, rows FROM pg_stat_statements ORDER BY query COLLATE "C" |     1 |   10
- SET ROLE regress_stats_user1                                                 |     1 |    0
- SET ROLE regress_stats_user2                                                 |     1 |    0
-(12 rows)
+SELECT count(*), query, sum(calls) calls, sum(rows) rows FROM pg_stat_statements GROUP BY query ORDER BY query COLLATE "C";
+ count |                                                           query                                                            | calls | rows 
+-------+----------------------------------------------------------------------------------------------------------------------------+-------+------
+     1 | CREATE ROLE regress_stats_user1                                                                                            |     1 |    0
+     3 | CREATE ROLE regress_stats_user1;                                                                                           |     3 |    0
+     1 | CREATE ROLE regress_stats_user2                                                                                            |     1 |    0
+     3 | CREATE ROLE regress_stats_user2;                                                                                           |     3 |    0
+     1 | RESET ROLE                                                                                                                 |     2 |    0
+     3 | RESET role                                                                                                                 |     6 |    0
+     2 | SELECT $1 AS "ONE"                                                                                                         |     2 |    2
+     2 | SELECT $1+$2 AS "TWO"                                                                                                      |     2 |    2
+     4 | SELECT $2 as gp_segment_id, * FROM pg_stat_statements_local(showtext)                                                     +|     5 |   29
+       |   UNION ALL                                                                                                               +|       | 
+       |   SELECT                                                                                                                  +|       | 
+       |   seg.gp_segment_id,                                                                                                      +|       | 
+       |   seg.userid,                                                                                                             +|       | 
+       |   seg.dbid,                                                                                                               +|       | 
+       |   seg.queryid,                                                                                                            +|       | 
+       |   COALESCE(disp.query, seg.query),                                                                                        +|       | 
+       |   seg.calls,                                                                                                              +|       | 
+       |   seg.total_time,                                                                                                         +|       | 
+       |   seg.min_time,                                                                                                           +|       | 
+       |   seg.max_time,                                                                                                           +|       | 
+       |   seg.mean_time,                                                                                                          +|       | 
+       |   seg.stddev_time,                                                                                                        +|       | 
+       |   seg.rows,                                                                                                               +|       | 
+       |   seg.shared_blks_hit,                                                                                                    +|       | 
+       |   seg.shared_blks_read,                                                                                                   +|       | 
+       |   seg.shared_blks_dirtied,                                                                                                +|       | 
+       |   seg.shared_blks_written,                                                                                                +|       | 
+       |   seg.local_blks_hit,                                                                                                     +|       | 
+       |   seg.local_blks_read,                                                                                                    +|       | 
+       |   seg.local_blks_dirtied,                                                                                                 +|       | 
+       |   seg.local_blks_written,                                                                                                 +|       | 
+       |   seg.temp_blks_read,                                                                                                     +|       | 
+       |   seg.temp_blks_written,                                                                                                  +|       | 
+       |   seg.blk_read_time,                                                                                                      +|       | 
+       |   seg.blk_write_time                                                                                                      +|       | 
+       |   FROM pg_stat_statements_segments(showtext) seg                                                                          +|       | 
+       |   LEFT JOIN pg_stat_statements_local(showtext) disp USING (queryid)                                                        |       | 
+     1 | SELECT count(*), query, sum(calls) calls, sum(rows) rows FROM pg_stat_statements GROUP BY query ORDER BY query COLLATE "C" |     1 |   15
+     1 | SELECT pg_stat_statements_reset($1)                                                                                        |     1 |    1
+     1 | SELECT pg_stat_statements_reset()                                                                                          |     1 |    1
+     1 | SELECT pg_stat_statements_reset_local(userid, dbid, queryid)                                                               |     1 |    1
+     3 | SELECT pg_stat_statements_reset_segments(userid, dbid, queryid)                                                            |     3 |    0
+     1 | SET ROLE regress_stats_user1                                                                                               |     1 |    0
+     1 | SET ROLE regress_stats_user2                                                                                               |     1 |    0
+     3 | SET role TO 'regress_stats_user1'                                                                                          |     3 |    0
+     3 | SET role TO 'regress_stats_user2'                                                                                          |     3 |    0
+     3 | select gp_execution_segment()::int8 as gp_segment_id, * from pg_stat_statements_local(showtext)                            |     3 |   18
+(19 rows)
 
 --
 -- remove query ('SELECT $1+$2 AS "TWO"') executed by regress_stats_user2
@@ -489,26 +550,62 @@ SELECT pg_stat_statements_reset(
  
 (1 row)
 
-SELECT query, calls, rows FROM pg_stat_statements ORDER BY query COLLATE "C";
-                                      query                                       | calls | rows 
-----------------------------------------------------------------------------------+-------+------
- CREATE ROLE regress_stats_user1                                                  |     1 |    0
- CREATE ROLE regress_stats_user2                                                  |     1 |    0
- RESET ROLE                                                                       |     2 |    0
- SELECT $1 AS "ONE"                                                               |     1 |    1
- SELECT $1 AS "ONE"                                                               |     1 |    1
- SELECT $1+$2 AS "TWO"                                                            |     1 |    1
- SELECT pg_stat_statements_reset(                                                +|     1 |    1
-         (SELECT r.oid FROM pg_roles AS r WHERE r.rolname = $1),                 +|       | 
-         (SELECT d.oid FROM pg_database As d where datname = current_database()),+|       | 
-         (SELECT s.queryid FROM pg_stat_statements AS s                          +|       | 
-                                 WHERE s.query = $2 LIMIT $3))                    |       | 
- SELECT pg_stat_statements_reset($1)                                              |     1 |    1
- SELECT pg_stat_statements_reset()                                                |     1 |    1
- SELECT query, calls, rows FROM pg_stat_statements ORDER BY query COLLATE "C"     |     2 |   22
- SET ROLE regress_stats_user1                                                     |     1 |    0
- SET ROLE regress_stats_user2                                                     |     1 |    0
-(12 rows)
+SELECT count(*), query, sum(calls) calls, sum(rows) rows FROM pg_stat_statements GROUP BY query ORDER BY query COLLATE "C";
+ count |                                                           query                                                            | calls | rows 
+-------+----------------------------------------------------------------------------------------------------------------------------+-------+------
+     1 | CREATE ROLE regress_stats_user1                                                                                            |     1 |    0
+     3 | CREATE ROLE regress_stats_user1;                                                                                           |     3 |    0
+     1 | CREATE ROLE regress_stats_user2                                                                                            |     1 |    0
+     3 | CREATE ROLE regress_stats_user2;                                                                                           |     3 |    0
+     1 | RESET ROLE                                                                                                                 |     2 |    0
+     3 | RESET role                                                                                                                 |     6 |    0
+     2 | SELECT $1 AS "ONE"                                                                                                         |     2 |    2
+     1 | SELECT $1+$2 AS "TWO"                                                                                                      |     1 |    1
+     4 | SELECT $2 as gp_segment_id, * FROM pg_stat_statements_local(showtext)                                                     +|    15 |  105
+       |   UNION ALL                                                                                                               +|       | 
+       |   SELECT                                                                                                                  +|       | 
+       |   seg.gp_segment_id,                                                                                                      +|       | 
+       |   seg.userid,                                                                                                             +|       | 
+       |   seg.dbid,                                                                                                               +|       | 
+       |   seg.queryid,                                                                                                            +|       | 
+       |   COALESCE(disp.query, seg.query),                                                                                        +|       | 
+       |   seg.calls,                                                                                                              +|       | 
+       |   seg.total_time,                                                                                                         +|       | 
+       |   seg.min_time,                                                                                                           +|       | 
+       |   seg.max_time,                                                                                                           +|       | 
+       |   seg.mean_time,                                                                                                          +|       | 
+       |   seg.stddev_time,                                                                                                        +|       | 
+       |   seg.rows,                                                                                                               +|       | 
+       |   seg.shared_blks_hit,                                                                                                    +|       | 
+       |   seg.shared_blks_read,                                                                                                   +|       | 
+       |   seg.shared_blks_dirtied,                                                                                                +|       | 
+       |   seg.shared_blks_written,                                                                                                +|       | 
+       |   seg.local_blks_hit,                                                                                                     +|       | 
+       |   seg.local_blks_read,                                                                                                    +|       | 
+       |   seg.local_blks_dirtied,                                                                                                 +|       | 
+       |   seg.local_blks_written,                                                                                                 +|       | 
+       |   seg.temp_blks_read,                                                                                                     +|       | 
+       |   seg.temp_blks_written,                                                                                                  +|       | 
+       |   seg.blk_read_time,                                                                                                      +|       | 
+       |   seg.blk_write_time                                                                                                      +|       | 
+       |   FROM pg_stat_statements_segments(showtext) seg                                                                          +|       | 
+       |   LEFT JOIN pg_stat_statements_local(showtext) disp USING (queryid)                                                        |       | 
+     1 | SELECT count(*), query, sum(calls) calls, sum(rows) rows FROM pg_stat_statements GROUP BY query ORDER BY query COLLATE "C" |     2 |   34
+     1 | SELECT pg_stat_statements_reset(                                                                                          +|     1 |    1
+       |         (SELECT r.oid FROM pg_roles AS r WHERE r.rolname = $1),                                                           +|       | 
+       |         (SELECT d.oid FROM pg_database As d where datname = current_database()),                                          +|       | 
+       |         (SELECT s.queryid FROM pg_stat_statements AS s                                                                    +|       | 
+       |                                 WHERE s.query = $2 LIMIT $3))                                                              |       | 
+     1 | SELECT pg_stat_statements_reset($1)                                                                                        |     1 |    1
+     1 | SELECT pg_stat_statements_reset()                                                                                          |     1 |    1
+     1 | SELECT pg_stat_statements_reset_local(userid, dbid, queryid)                                                               |     2 |    2
+     4 | SELECT pg_stat_statements_reset_segments(userid, dbid, queryid)                                                            |     7 |    3
+     1 | SET ROLE regress_stats_user1                                                                                               |     1 |    0
+     1 | SET ROLE regress_stats_user2                                                                                               |     1 |    0
+     3 | SET role TO 'regress_stats_user1'                                                                                          |     3 |    0
+     3 | SET role TO 'regress_stats_user2'                                                                                          |     3 |    0
+     3 | select gp_execution_segment()::int8 as gp_segment_id, * from pg_stat_statements_local(showtext)                            |     9 |   66
+(20 rows)
 
 --
 -- remove query ('SELECT $1 AS "ONE"') executed by two users
@@ -521,26 +618,63 @@ SELECT pg_stat_statements_reset(0,0,s.queryid)
  
 (2 rows)
 
-SELECT query, calls, rows FROM pg_stat_statements ORDER BY query COLLATE "C";
-                                      query                                       | calls | rows 
-----------------------------------------------------------------------------------+-------+------
- CREATE ROLE regress_stats_user1                                                  |     1 |    0
- CREATE ROLE regress_stats_user2                                                  |     1 |    0
- RESET ROLE                                                                       |     2 |    0
- SELECT $1+$2 AS "TWO"                                                            |     1 |    1
- SELECT pg_stat_statements_reset(                                                +|     1 |    1
-         (SELECT r.oid FROM pg_roles AS r WHERE r.rolname = $1),                 +|       | 
-         (SELECT d.oid FROM pg_database As d where datname = current_database()),+|       | 
-         (SELECT s.queryid FROM pg_stat_statements AS s                          +|       | 
-                                 WHERE s.query = $2 LIMIT $3))                    |       | 
- SELECT pg_stat_statements_reset($1)                                              |     1 |    1
- SELECT pg_stat_statements_reset($1,$2,s.queryid)                                +|     1 |    2
-         FROM pg_stat_statements AS s WHERE s.query = $3                          |       | 
- SELECT pg_stat_statements_reset()                                                |     1 |    1
- SELECT query, calls, rows FROM pg_stat_statements ORDER BY query COLLATE "C"     |     3 |   34
- SET ROLE regress_stats_user1                                                     |     1 |    0
- SET ROLE regress_stats_user2                                                     |     1 |    0
-(11 rows)
+SELECT count(*), query, sum(calls) calls, sum(rows) rows FROM pg_stat_statements GROUP BY query ORDER BY query COLLATE "C";
+ count |                                                           query                                                            | calls | rows 
+-------+----------------------------------------------------------------------------------------------------------------------------+-------+------
+     1 | CREATE ROLE regress_stats_user1                                                                                            |     1 |    0
+     3 | CREATE ROLE regress_stats_user1;                                                                                           |     3 |    0
+     1 | CREATE ROLE regress_stats_user2                                                                                            |     1 |    0
+     3 | CREATE ROLE regress_stats_user2;                                                                                           |     3 |    0
+     1 | RESET ROLE                                                                                                                 |     2 |    0
+     3 | RESET role                                                                                                                 |     6 |    0
+     1 | SELECT $1+$2 AS "TWO"                                                                                                      |     1 |    1
+     4 | SELECT $2 as gp_segment_id, * FROM pg_stat_statements_local(showtext)                                                     +|    25 |  183
+       |   UNION ALL                                                                                                               +|       | 
+       |   SELECT                                                                                                                  +|       | 
+       |   seg.gp_segment_id,                                                                                                      +|       | 
+       |   seg.userid,                                                                                                             +|       | 
+       |   seg.dbid,                                                                                                               +|       | 
+       |   seg.queryid,                                                                                                            +|       | 
+       |   COALESCE(disp.query, seg.query),                                                                                        +|       | 
+       |   seg.calls,                                                                                                              +|       | 
+       |   seg.total_time,                                                                                                         +|       | 
+       |   seg.min_time,                                                                                                           +|       | 
+       |   seg.max_time,                                                                                                           +|       | 
+       |   seg.mean_time,                                                                                                          +|       | 
+       |   seg.stddev_time,                                                                                                        +|       | 
+       |   seg.rows,                                                                                                               +|       | 
+       |   seg.shared_blks_hit,                                                                                                    +|       | 
+       |   seg.shared_blks_read,                                                                                                   +|       | 
+       |   seg.shared_blks_dirtied,                                                                                                +|       | 
+       |   seg.shared_blks_written,                                                                                                +|       | 
+       |   seg.local_blks_hit,                                                                                                     +|       | 
+       |   seg.local_blks_read,                                                                                                    +|       | 
+       |   seg.local_blks_dirtied,                                                                                                 +|       | 
+       |   seg.local_blks_written,                                                                                                 +|       | 
+       |   seg.temp_blks_read,                                                                                                     +|       | 
+       |   seg.temp_blks_written,                                                                                                  +|       | 
+       |   seg.blk_read_time,                                                                                                      +|       | 
+       |   seg.blk_write_time                                                                                                      +|       | 
+       |   FROM pg_stat_statements_segments(showtext) seg                                                                          +|       | 
+       |   LEFT JOIN pg_stat_statements_local(showtext) disp USING (queryid)                                                        |       | 
+     1 | SELECT count(*), query, sum(calls) calls, sum(rows) rows FROM pg_stat_statements GROUP BY query ORDER BY query COLLATE "C" |     3 |   54
+     1 | SELECT pg_stat_statements_reset(                                                                                          +|     1 |    1
+       |         (SELECT r.oid FROM pg_roles AS r WHERE r.rolname = $1),                                                           +|       | 
+       |         (SELECT d.oid FROM pg_database As d where datname = current_database()),                                          +|       | 
+       |         (SELECT s.queryid FROM pg_stat_statements AS s                                                                    +|       | 
+       |                                 WHERE s.query = $2 LIMIT $3))                                                              |       | 
+     1 | SELECT pg_stat_statements_reset($1)                                                                                        |     1 |    1
+     1 | SELECT pg_stat_statements_reset($1,$2,s.queryid)                                                                          +|     1 |    2
+       |         FROM pg_stat_statements AS s WHERE s.query = $3                                                                    |       | 
+     1 | SELECT pg_stat_statements_reset()                                                                                          |     1 |    1
+     1 | SELECT pg_stat_statements_reset_local(userid, dbid, queryid)                                                               |     4 |    4
+     4 | SELECT pg_stat_statements_reset_segments(userid, dbid, queryid)                                                            |    15 |    9
+     1 | SET ROLE regress_stats_user1                                                                                               |     1 |    0
+     1 | SET ROLE regress_stats_user2                                                                                               |     1 |    0
+     3 | SET role TO 'regress_stats_user1'                                                                                          |     3 |    0
+     3 | SET role TO 'regress_stats_user2'                                                                                          |     3 |    0
+     3 | select gp_execution_segment()::int8 as gp_segment_id, * from pg_stat_statements_local(showtext)                            |    15 |  114
+(20 rows)
 
 --
 -- remove query of a user (regress_stats_user1)
@@ -552,26 +686,62 @@ SELECT pg_stat_statements_reset(r.oid)
  
 (1 row)
 
-SELECT query, calls, rows FROM pg_stat_statements ORDER BY query COLLATE "C";
-                                      query                                       | calls | rows 
-----------------------------------------------------------------------------------+-------+------
- CREATE ROLE regress_stats_user1                                                  |     1 |    0
- CREATE ROLE regress_stats_user2                                                  |     1 |    0
- RESET ROLE                                                                       |     2 |    0
- SELECT pg_stat_statements_reset(                                                +|     1 |    1
-         (SELECT r.oid FROM pg_roles AS r WHERE r.rolname = $1),                 +|       | 
-         (SELECT d.oid FROM pg_database As d where datname = current_database()),+|       | 
-         (SELECT s.queryid FROM pg_stat_statements AS s                          +|       | 
-                                 WHERE s.query = $2 LIMIT $3))                    |       | 
- SELECT pg_stat_statements_reset($1)                                              |     1 |    1
- SELECT pg_stat_statements_reset($1,$2,s.queryid)                                +|     1 |    2
-         FROM pg_stat_statements AS s WHERE s.query = $3                          |       | 
- SELECT pg_stat_statements_reset()                                                |     1 |    1
- SELECT pg_stat_statements_reset(r.oid)                                          +|     1 |    1
-                 FROM pg_roles AS r WHERE r.rolname = $1                          |       | 
- SELECT query, calls, rows FROM pg_stat_statements ORDER BY query COLLATE "C"     |     4 |   45
- SET ROLE regress_stats_user2                                                     |     1 |    0
-(10 rows)
+SELECT count(*), query, sum(calls) calls, sum(rows) rows FROM pg_stat_statements GROUP BY query ORDER BY query COLLATE "C";
+ count |                                                           query                                                            | calls | rows 
+-------+----------------------------------------------------------------------------------------------------------------------------+-------+------
+     1 | CREATE ROLE regress_stats_user1                                                                                            |     1 |    0
+     3 | CREATE ROLE regress_stats_user1;                                                                                           |     3 |    0
+     1 | CREATE ROLE regress_stats_user2                                                                                            |     1 |    0
+     3 | CREATE ROLE regress_stats_user2;                                                                                           |     3 |    0
+     1 | RESET ROLE                                                                                                                 |     2 |    0
+     3 | RESET role                                                                                                                 |     6 |    0
+     4 | SELECT $2 as gp_segment_id, * FROM pg_stat_statements_local(showtext)                                                     +|    30 |  221
+       |   UNION ALL                                                                                                               +|       | 
+       |   SELECT                                                                                                                  +|       | 
+       |   seg.gp_segment_id,                                                                                                      +|       | 
+       |   seg.userid,                                                                                                             +|       | 
+       |   seg.dbid,                                                                                                               +|       | 
+       |   seg.queryid,                                                                                                            +|       | 
+       |   COALESCE(disp.query, seg.query),                                                                                        +|       | 
+       |   seg.calls,                                                                                                              +|       | 
+       |   seg.total_time,                                                                                                         +|       | 
+       |   seg.min_time,                                                                                                           +|       | 
+       |   seg.max_time,                                                                                                           +|       | 
+       |   seg.mean_time,                                                                                                          +|       | 
+       |   seg.stddev_time,                                                                                                        +|       | 
+       |   seg.rows,                                                                                                               +|       | 
+       |   seg.shared_blks_hit,                                                                                                    +|       | 
+       |   seg.shared_blks_read,                                                                                                   +|       | 
+       |   seg.shared_blks_dirtied,                                                                                                +|       | 
+       |   seg.shared_blks_written,                                                                                                +|       | 
+       |   seg.local_blks_hit,                                                                                                     +|       | 
+       |   seg.local_blks_read,                                                                                                    +|       | 
+       |   seg.local_blks_dirtied,                                                                                                 +|       | 
+       |   seg.local_blks_written,                                                                                                 +|       | 
+       |   seg.temp_blks_read,                                                                                                     +|       | 
+       |   seg.temp_blks_written,                                                                                                  +|       | 
+       |   seg.blk_read_time,                                                                                                      +|       | 
+       |   seg.blk_write_time                                                                                                      +|       | 
+       |   FROM pg_stat_statements_segments(showtext) seg                                                                          +|       | 
+       |   LEFT JOIN pg_stat_statements_local(showtext) disp USING (queryid)                                                        |       | 
+     1 | SELECT count(*), query, sum(calls) calls, sum(rows) rows FROM pg_stat_statements GROUP BY query ORDER BY query COLLATE "C" |     4 |   74
+     1 | SELECT pg_stat_statements_reset(                                                                                          +|     1 |    1
+       |         (SELECT r.oid FROM pg_roles AS r WHERE r.rolname = $1),                                                           +|       | 
+       |         (SELECT d.oid FROM pg_database As d where datname = current_database()),                                          +|       | 
+       |         (SELECT s.queryid FROM pg_stat_statements AS s                                                                    +|       | 
+       |                                 WHERE s.query = $2 LIMIT $3))                                                              |       | 
+     1 | SELECT pg_stat_statements_reset($1)                                                                                        |     1 |    1
+     1 | SELECT pg_stat_statements_reset($1,$2,s.queryid)                                                                          +|     1 |    2
+       |         FROM pg_stat_statements AS s WHERE s.query = $3                                                                    |       | 
+     1 | SELECT pg_stat_statements_reset()                                                                                          |     1 |    1
+     1 | SELECT pg_stat_statements_reset(r.oid)                                                                                    +|     1 |    1
+       |                 FROM pg_roles AS r WHERE r.rolname = $1                                                                    |       | 
+     1 | SELECT pg_stat_statements_reset_local(userid, dbid, queryid)                                                               |     5 |    5
+     4 | SELECT pg_stat_statements_reset_segments(userid, dbid, queryid)                                                            |    19 |   12
+     1 | SET ROLE regress_stats_user2                                                                                               |     1 |    0
+     3 | SET role TO 'regress_stats_user2'                                                                                          |     3 |    0
+     3 | select gp_execution_segment()::int8 as gp_segment_id, * from pg_stat_statements_local(showtext)                            |    18 |  138
+(18 rows)
 
 --
 -- reset all
@@ -582,11 +752,13 @@ SELECT pg_stat_statements_reset(0,0,0);
  
 (1 row)
 
-SELECT query, calls, rows FROM pg_stat_statements ORDER BY query COLLATE "C";
-                 query                  | calls | rows 
-----------------------------------------+-------+------
- SELECT pg_stat_statements_reset(0,0,0) |     1 |    1
-(1 row)
+SELECT count(*), query, sum(calls) calls, sum(rows) rows FROM pg_stat_statements GROUP BY query ORDER BY query COLLATE "C";
+ count |                              query                              | calls | rows 
+-------+-----------------------------------------------------------------+-------+------
+     1 | SELECT pg_stat_statements_reset(0,0,0)                          |     1 |    1
+     1 | SELECT pg_stat_statements_reset_local(userid, dbid, queryid)    |     1 |    1
+     3 | SELECT pg_stat_statements_reset_segments(userid, dbid, queryid) |     3 |    0
+(3 rows)
 
 --
 -- cleanup
