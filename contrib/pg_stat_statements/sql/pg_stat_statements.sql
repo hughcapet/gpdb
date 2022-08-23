@@ -51,7 +51,7 @@ PREPARE pgss_test (int) AS SELECT $1, 'test' LIMIT 1;
 EXECUTE pgss_test(1);
 DEALLOCATE pgss_test;
 
-SELECT query, calls, rows FROM pg_stat_statements ORDER BY query COLLATE "C";
+SELECT count(*), query, sum(calls) calls, sum(rows) rows FROM pg_stat_statements GROUP BY query ORDER BY query COLLATE "C";
 
 --
 -- CRUD: INSERT SELECT UPDATE DELETE on test table
@@ -86,7 +86,7 @@ COMMIT ;
 INSERT INTO test (a, b) VALUES (1, 'a'), (2, 'b'), (3, 'c');
 
 -- SELECT with constants
-SELECT * FROM test WHERE a > 5 ORDER BY a ;
+SELECT * FROM test WHERE a > 5 ORDER BY a, b;
 
 SELECT *
   FROM test
@@ -97,9 +97,9 @@ SELECT *
 SELECT * FROM test ORDER BY a;
 
 -- SELECT with IN clause
-SELECT * FROM test WHERE a IN (1, 2, 3, 4, 5);
+SELECT * FROM test WHERE a IN (1, 2, 3, 4, 5) ORDER BY a, b;
 
-SELECT query, calls, rows FROM pg_stat_statements ORDER BY query COLLATE "C";
+SELECT count(*), query, sum(calls) calls, sum(rows) rows FROM pg_stat_statements GROUP BY query ORDER BY query COLLATE "C";
 
 --
 -- pg_stat_statements.track = none
@@ -110,7 +110,7 @@ SELECT pg_stat_statements_reset();
 SELECT 1 AS "one";
 SELECT 1 + 1 AS "two";
 
-SELECT query, calls, rows FROM pg_stat_statements ORDER BY query COLLATE "C";
+SELECT count(*), query, sum(calls) calls, sum(rows) rows FROM pg_stat_statements GROUP BY query ORDER BY query COLLATE "C";
 
 --
 -- pg_stat_statements.track = top
@@ -144,7 +144,7 @@ $$ SELECT (i + 1.0)::INTEGER LIMIT 1 $$ LANGUAGE SQL;
 SELECT PLUS_ONE(8);
 SELECT PLUS_ONE(10);
 
-SELECT query, calls, rows FROM pg_stat_statements ORDER BY query COLLATE "C";
+SELECT count(*), query, sum(calls) calls, sum(rows) rows FROM pg_stat_statements GROUP BY query ORDER BY query COLLATE "C";
 
 --
 -- pg_stat_statements.track = all
@@ -175,7 +175,7 @@ $$ SELECT (i + 1.0)::INTEGER LIMIT 1 $$ LANGUAGE SQL;
 SELECT PLUS_ONE(3);
 SELECT PLUS_ONE(1);
 
-SELECT query, calls, rows FROM pg_stat_statements ORDER BY query COLLATE "C";
+SELECT count(*), query, sum(calls) calls, sum(rows) rows FROM pg_stat_statements GROUP BY query ORDER BY query COLLATE "C";
 
 --
 -- utility commands
@@ -193,7 +193,7 @@ DROP TABLE IF EXISTS test \;
 DROP FUNCTION IF EXISTS PLUS_ONE(INTEGER);
 DROP FUNCTION PLUS_TWO(INTEGER);
 
-SELECT query, calls, rows FROM pg_stat_statements ORDER BY query COLLATE "C";
+SELECT count(*), query, sum(calls) calls, sum(rows) rows FROM pg_stat_statements GROUP BY query ORDER BY query COLLATE "C";
 
 --
 -- Track user activity and reset them
@@ -214,13 +214,13 @@ SELECT 1 AS "ONE";
 SELECT 1+1 AS "TWO";
 
 RESET ROLE;
-SELECT query, calls, rows FROM pg_stat_statements ORDER BY query COLLATE "C";
+SELECT count(*), query, sum(calls) calls, sum(rows) rows FROM pg_stat_statements GROUP BY query ORDER BY query COLLATE "C";
 
 --
 -- Don't reset anything if any of the parameter is NULL
 --
 SELECT pg_stat_statements_reset(NULL);
-SELECT query, calls, rows FROM pg_stat_statements ORDER BY query COLLATE "C";
+SELECT count(*), query, sum(calls) calls, sum(rows) rows FROM pg_stat_statements GROUP BY query ORDER BY query COLLATE "C";
 
 --
 -- remove query ('SELECT $1+$2 AS "TWO"') executed by regress_stats_user2
@@ -231,27 +231,27 @@ SELECT pg_stat_statements_reset(
 	(SELECT d.oid FROM pg_database As d where datname = current_database()),
 	(SELECT s.queryid FROM pg_stat_statements AS s
 				WHERE s.query = 'SELECT $1+$2 AS "TWO"' LIMIT 1));
-SELECT query, calls, rows FROM pg_stat_statements ORDER BY query COLLATE "C";
+SELECT count(*), query, sum(calls) calls, sum(rows) rows FROM pg_stat_statements GROUP BY query ORDER BY query COLLATE "C";
 
 --
 -- remove query ('SELECT $1 AS "ONE"') executed by two users
 --
 SELECT pg_stat_statements_reset(0,0,s.queryid)
 	FROM pg_stat_statements AS s WHERE s.query = 'SELECT $1 AS "ONE"';
-SELECT query, calls, rows FROM pg_stat_statements ORDER BY query COLLATE "C";
+SELECT count(*), query, sum(calls) calls, sum(rows) rows FROM pg_stat_statements GROUP BY query ORDER BY query COLLATE "C";
 
 --
 -- remove query of a user (regress_stats_user1)
 --
 SELECT pg_stat_statements_reset(r.oid)
 		FROM pg_roles AS r WHERE r.rolname = 'regress_stats_user1';
-SELECT query, calls, rows FROM pg_stat_statements ORDER BY query COLLATE "C";
+SELECT count(*), query, sum(calls) calls, sum(rows) rows FROM pg_stat_statements GROUP BY query ORDER BY query COLLATE "C";
 
 --
 -- reset all
 --
 SELECT pg_stat_statements_reset(0,0,0);
-SELECT query, calls, rows FROM pg_stat_statements ORDER BY query COLLATE "C";
+SELECT count(*), query, sum(calls) calls, sum(rows) rows FROM pg_stat_statements GROUP BY query ORDER BY query COLLATE "C";
 
 --
 -- cleanup
